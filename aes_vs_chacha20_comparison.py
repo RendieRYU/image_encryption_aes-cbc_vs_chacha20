@@ -340,7 +340,7 @@ def display_metrics_gui(metrics_data, image_path, aes_key_text=None, chacha_key_
     summary_frame.pack(fill=tk.X, pady=(15, 0))
     
     # Create summary text
-    summary_text = tk.Text(summary_frame, height=8, wrap=tk.WORD, font=("Arial", 9))
+    summary_text = tk.Text(summary_frame, height=12, wrap=tk.WORD, font=("Arial", 9))
     summary_scrollbar = ttk.Scrollbar(summary_frame, orient="vertical", command=summary_text.yview)
     summary_text.configure(yscrollcommand=summary_scrollbar.set)
     
@@ -351,6 +351,27 @@ def display_metrics_gui(metrics_data, image_path, aes_key_text=None, chacha_key_
     
     summary_text.pack(side="left", fill="both", expand=True)
     summary_scrollbar.pack(side="right", fill="y")
+    
+    # Winner announcement frame (if there's a clear winner)
+    winner_info = get_algorithm_winner(metrics_data)
+    if winner_info:
+        winner_frame = ttk.LabelFrame(content_frame, text="🏆 KESIMPULAN ALGORITMA TERBAIK", padding="15")
+        winner_frame.pack(fill=tk.X, pady=(15, 0))
+        
+        # Winner label with prominent styling
+        winner_label = ttk.Label(winner_frame, text=winner_info["announcement"], 
+                                font=("Arial", 12, "bold"), foreground="darkgreen")
+        winner_label.pack(pady=(0, 5))
+        
+        # Score details
+        score_label = ttk.Label(winner_frame, text=winner_info["score_details"], 
+                               font=("Arial", 10))
+        score_label.pack(pady=(0, 5))
+        
+        # Recommendation
+        rec_label = ttk.Label(winner_frame, text=winner_info["recommendation"], 
+                             font=("Arial", 9), foreground="darkblue")
+        rec_label.pack()
     
     # Buttons frame
     button_frame = ttk.Frame(content_frame)
@@ -429,6 +450,96 @@ def get_metric_interpretation(metric_name, value, comparison_type):
     
     return interpretations.get(metric_name, {}).get(category, f"Nilai: {value}")
 
+def get_algorithm_winner(metrics_data):
+    """Menentukan algoritma mana yang lebih baik berdasarkan metrik."""
+    aes_metrics = {}
+    chacha_metrics = {}
+    
+    # Extract metrics for both algorithms
+    for comparison_name, metrics in metrics_data.items():
+        if "AES-CBC Encryption Analysis" in comparison_name:
+            aes_metrics = metrics
+        elif "ChaCha20 Encryption Analysis" in comparison_name:
+            chacha_metrics = metrics
+    
+    if not aes_metrics or not chacha_metrics:
+        return None
+    
+    # Scoring system
+    aes_score = 0
+    chacha_score = 0
+    
+    # Kriteria 1: NPCR (semakin tinggi semakin baik)
+    aes_npcr = aes_metrics.get("NPCR (%)", 0)
+    chacha_npcr = chacha_metrics.get("NPCR (%)", 0)
+    if aes_npcr > chacha_npcr:
+        aes_score += 1
+    elif chacha_npcr > aes_npcr:
+        chacha_score += 1
+    
+    # Kriteria 2: UACI (mendekati 33.46% adalah optimal)
+    aes_uaci = aes_metrics.get("UACI (%)", 0)
+    chacha_uaci = chacha_metrics.get("UACI (%)", 0)
+    optimal_uaci = 33.46
+    aes_uaci_diff = abs(aes_uaci - optimal_uaci)
+    chacha_uaci_diff = abs(chacha_uaci - optimal_uaci)
+    if aes_uaci_diff < chacha_uaci_diff:
+        aes_score += 1
+    elif chacha_uaci_diff < aes_uaci_diff:
+        chacha_score += 1
+    
+    # Kriteria 3: Correlation Coefficient (mendekati 0 semakin baik)
+    aes_cc = abs(aes_metrics.get("Correlation Coefficient (CC)", 1))
+    chacha_cc = abs(chacha_metrics.get("Correlation Coefficient (CC)", 1))
+    if aes_cc < chacha_cc:
+        aes_score += 1
+    elif chacha_cc < aes_cc:
+        chacha_score += 1
+    
+    # Kriteria 4: MSE (semakin tinggi semakin baik untuk enkripsi)
+    aes_mse = aes_metrics.get("MSE", 0)
+    chacha_mse = chacha_metrics.get("MSE", 0)
+    if aes_mse > chacha_mse:
+        aes_score += 1
+    elif chacha_mse > aes_mse:
+        chacha_score += 1
+    
+    # Kriteria 5: SSIM (semakin rendah semakin baik untuk enkripsi)
+    aes_ssim = aes_metrics.get("SSIM", 1)
+    chacha_ssim = chacha_metrics.get("SSIM", 1)
+    if aes_ssim < chacha_ssim:
+        aes_score += 1
+    elif chacha_ssim < aes_ssim:
+        chacha_score += 1
+
+    # Kriteria 6: PSNR (semakin rendah semakin baik untuk enkripsi)
+    aes_psnr = aes_metrics.get("PSNR", float('inf'))
+    chacha_psnr = chacha_metrics.get("PSNR", float('inf'))
+    if aes_psnr < chacha_psnr:
+        aes_score += 1
+    elif chacha_psnr < aes_psnr:
+        chacha_score += 1
+    
+    # Determine winner and create result
+    if aes_score > chacha_score:
+        return {
+            "announcement": f"🏆 AES-CBC adalah algoritma yang lebih unggul!",
+            "score_details": f"Skor: AES-CBC ({aes_score}/6) vs ChaCha20 ({chacha_score}/6)",
+            "recommendation": "AES-CBC menunjukkan performa enkripsi yang lebih baik untuk gambar ini."
+        }
+    elif chacha_score > aes_score:
+        return {
+            "announcement": f"🏆 ChaCha20 adalah algoritma yang lebih unggul!",
+            "score_details": f"Skor: ChaCha20 ({chacha_score}/6) vs AES-CBC ({aes_score}/6)",
+            "recommendation": "ChaCha20 menunjukkan performa enkripsi yang lebih baik untuk gambar ini."
+        }
+    else:
+        return {
+            "announcement": f"🤝 Kedua algoritma memiliki performa yang setara",
+            "score_details": f"Skor: AES-CBC ({aes_score}/6) = ChaCha20 ({chacha_score}/6)",
+            "recommendation": "Pilihan algoritma dapat didasarkan pada faktor lain seperti kecepatan atau preferensi implementasi."
+        }
+
 def generate_metrics_summary(metrics_data):
     """Menghasilkan ringkasan analisis dari semua metrik."""
     summary = "RINGKASAN ANALISIS ENKRIPSI:\n\n"
@@ -449,18 +560,27 @@ def generate_metrics_summary(metrics_data):
     summary += f"   • AES-CBC: {'✓ VALID' if aes_valid else '✗ ERROR'}\n"
     summary += f"   • ChaCha20: {'✓ VALID' if chacha_valid else '✗ ERROR'}\n\n"
     
-    # Analyze encryption strength
+    # Analyze encryption strength and collect metrics for comparison
     summary += "2. KEKUATAN ENKRIPSI:\n"
     
+    aes_metrics = {}
+    chacha_metrics = {}
+    
     for comparison_name, metrics in metrics_data.items():
-        if "Encryption Analysis" in comparison_name:
-            algorithm = "AES-CBC" if "AES-CBC" in comparison_name else "ChaCha20"
+        if "AES-CBC Encryption Analysis" in comparison_name:
+            aes_metrics = metrics
             npcr = metrics.get("NPCR (%)", 0)
             uaci = metrics.get("UACI (%)", 0)
             cc = abs(metrics.get("Correlation Coefficient (CC)", 1))
-            
             strength = "KUAT" if npcr > 90 and cc < 0.1 else "LEMAH"
-            summary += f"   • {algorithm}: {strength} (NPCR: {npcr:.1f}%, CC: {cc:.3f})\n"
+            summary += f"   • AES-CBC: {strength} (NPCR: {npcr:.1f}%, CC: {cc:.3f})\n"
+        elif "ChaCha20 Encryption Analysis" in comparison_name:
+            chacha_metrics = metrics
+            npcr = metrics.get("NPCR (%)", 0)
+            uaci = metrics.get("UACI (%)", 0)
+            cc = abs(metrics.get("Correlation Coefficient (CC)", 1))
+            strength = "KUAT" if npcr > 90 and cc < 0.1 else "LEMAH"
+            summary += f"   • ChaCha20: {strength} (NPCR: {npcr:.1f}%, CC: {cc:.3f})\n"
     
     summary += "\n3. PERBANDINGAN ALGORITMA:\n"
     for comparison_name, metrics in metrics_data.items():
@@ -470,7 +590,95 @@ def generate_metrics_summary(metrics_data):
             summary += f"   • Perbedaan hasil: {npcr:.1f}% pixel berbeda\n"
             summary += f"   • Intensitas perubahan: {uaci:.2f}%\n"
     
-    summary += "\n4. KESIMPULAN:\n"
+    # KESIMPULAN ALGORITMA TERBAIK
+    summary += "\n4. KESIMPULAN ALGORITMA TERBAIK:\n"
+    
+    if aes_metrics and chacha_metrics:
+        # Scoring system untuk menentukan algoritma terbaik
+        aes_score = 0
+        chacha_score = 0
+        
+        # Kriteria 1: NPCR (semakin tinggi semakin baik)
+        aes_npcr = aes_metrics.get("NPCR (%)", 0)
+        chacha_npcr = chacha_metrics.get("NPCR (%)", 0)
+        if aes_npcr > chacha_npcr:
+            aes_score += 1
+        elif chacha_npcr > aes_npcr:
+            chacha_score += 1
+        
+        # Kriteria 2: UACI (mendekati 33.46% adalah optimal)
+        aes_uaci = aes_metrics.get("UACI (%)", 0)
+        chacha_uaci = chacha_metrics.get("UACI (%)", 0)
+        optimal_uaci = 33.46
+        aes_uaci_diff = abs(aes_uaci - optimal_uaci)
+        chacha_uaci_diff = abs(chacha_uaci - optimal_uaci)
+        if aes_uaci_diff < chacha_uaci_diff:
+            aes_score += 1
+        elif chacha_uaci_diff < aes_uaci_diff:
+            chacha_score += 1
+        
+        # Kriteria 3: Correlation Coefficient (mendekati 0 semakin baik)
+        aes_cc = abs(aes_metrics.get("Correlation Coefficient (CC)", 1))
+        chacha_cc = abs(chacha_metrics.get("Correlation Coefficient (CC)", 1))
+        if aes_cc < chacha_cc:
+            aes_score += 1
+        elif chacha_cc < aes_cc:
+            chacha_score += 1
+        
+        # Kriteria 4: MSE (semakin tinggi semakin baik untuk enkripsi)
+        aes_mse = aes_metrics.get("MSE", 0)
+        chacha_mse = chacha_metrics.get("MSE", 0)
+        if aes_mse > chacha_mse:
+            aes_score += 1
+        elif chacha_mse > aes_mse:
+            chacha_score += 1
+        
+        # Kriteria 5: SSIM (semakin rendah semakin baik untuk enkripsi)
+        aes_ssim = aes_metrics.get("SSIM", 1)
+        chacha_ssim = chacha_metrics.get("SSIM", 1)
+        if aes_ssim < chacha_ssim:
+            aes_score += 1
+        elif chacha_ssim < aes_ssim:
+            chacha_score += 1
+        
+        # Tentukan pemenang
+        if aes_score > chacha_score:
+            winner = "AES-CBC"
+            winner_emoji = "🏆"
+            summary += f"   {winner_emoji} PEMENANG: AES-CBC (Skor: {aes_score}/5)\n"
+            summary += f"   🥈 RUNNER-UP: ChaCha20 (Skor: {chacha_score}/5)\n\n"
+        elif chacha_score > aes_score:
+            winner = "ChaCha20"
+            winner_emoji = "🏆"
+            summary += f"   {winner_emoji} PEMENANG: ChaCha20 (Skor: {chacha_score}/5)\n"
+            summary += f"   🥈 RUNNER-UP: AES-CBC (Skor: {aes_score}/5)\n\n"
+        else:
+            summary += f"   🤝 HASIL SERI: Kedua algoritma memiliki performa yang setara\n"
+            summary += f"   📊 AES-CBC: {aes_score}/5 | ChaCha20: {chacha_score}/5\n\n"
+        
+        # Detail analisis perbandingan
+        summary += "   📈 ANALISIS DETAIL:\n"
+        summary += f"   • NPCR: AES={aes_npcr:.2f}% vs ChaCha20={chacha_npcr:.2f}%\n"
+        summary += f"   • UACI: AES={aes_uaci:.2f}% vs ChaCha20={chacha_uaci:.2f}% (optimal: 33.46%)\n"
+        summary += f"   • Correlation: AES={aes_cc:.6f} vs ChaCha20={chacha_cc:.6f}\n"
+        summary += f"   • MSE: AES={aes_mse:.1f} vs ChaCha20={chacha_mse:.1f}\n"
+        summary += f"   • SSIM: AES={aes_ssim:.6f} vs ChaCha20={chacha_ssim:.6f}\n\n"
+        
+        # Rekomendasi
+        if aes_score > chacha_score:
+            summary += "   💡 REKOMENDASI:\n"
+            summary += "   AES-CBC menunjukkan performa enkripsi yang lebih unggul dalam\n"
+            summary += "   sebagian besar metrik evaluasi untuk gambar ini.\n"
+        elif chacha_score > aes_score:
+            summary += "   💡 REKOMENDASI:\n"
+            summary += "   ChaCha20 menunjukkan performa enkripsi yang lebih unggul dalam\n"
+            summary += "   sebagian besar metrik evaluasi untuk gambar ini.\n"
+        else:
+            summary += "   💡 REKOMENDASI:\n"
+            summary += "   Kedua algoritma menunjukkan performa yang setara. Pilihan dapat\n"
+            summary += "   didasarkan pada faktor lain seperti kecepatan atau kebutuhan spesifik.\n"
+    
+    summary += "\n5. PANDUAN INTERPRETASI:\n"
     summary += "   • Semakin tinggi NPCR dan mendekati 0 CC = enkripsi semakin kuat\n"
     summary += "   • UACI optimal sekitar 33.46% untuk enkripsi yang baik\n"
     summary += "   • Dekripsi harus menghasilkan gambar identik dengan original\n"
