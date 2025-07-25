@@ -205,6 +205,279 @@ def select_image_file():
     root.destroy()
     return file_path
 
+def display_metrics_gui(metrics_data, image_path, aes_key_text=None, chacha_key_text=None):
+    """Menampilkan hasil metrik evaluasi dalam GUI yang interaktif."""
+    root = tk.Tk()
+    root.title("Hasil Evaluasi Metrik - AES-CBC vs ChaCha20")
+    root.geometry("1000x700")
+    root.resizable(True, True)
+    root.minsize(800, 600)
+    
+    # Center the window
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() // 2) - (1000 // 2)
+    y = (root.winfo_screenheight() // 2) - (700 // 2)
+    root.geometry(f"1000x700+{x}+{y}")
+    
+    # Create main container with scrollbar
+    main_container = ttk.Frame(root)
+    main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    # Create canvas and scrollbar for scrolling
+    canvas = tk.Canvas(main_container)
+    scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
+    scrollable_frame = ttk.Frame(canvas)
+    
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+    
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # Pack canvas and scrollbar
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+    
+    # Main content frame
+    content_frame = ttk.Frame(scrollable_frame, padding="20")
+    content_frame.pack(fill=tk.BOTH, expand=True)
+    
+    # Header information
+    header_frame = ttk.LabelFrame(content_frame, text="Informasi Evaluasi", padding="15")
+    header_frame.pack(fill=tk.X, pady=(0, 15))
+    
+    ttk.Label(header_frame, text=f"File Gambar: {os.path.basename(image_path)}", 
+              font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=2)
+    ttk.Label(header_frame, text=f"Waktu Evaluasi: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
+              font=("Arial", 9)).pack(anchor=tk.W, pady=2)
+    
+    if aes_key_text and chacha_key_text:
+        ttk.Label(header_frame, text=f"Kunci AES: {aes_key_text[:8]}...{aes_key_text[-8:]} (panjang: {len(aes_key_text)})", 
+                  font=("Arial", 9)).pack(anchor=tk.W, pady=2)
+        ttk.Label(header_frame, text=f"Kunci ChaCha20: {chacha_key_text[:8]}...{chacha_key_text[-8:]} (panjang: {len(chacha_key_text)})", 
+                  font=("Arial", 9)).pack(anchor=tk.W, pady=2)
+    
+    # Create notebook for different comparison tabs
+    notebook = ttk.Notebook(content_frame)
+    notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+    
+    # Colors for different comparison types
+    colors = {
+        "Validation": "#e8f5e8",  # Light green
+        "Encryption": "#fff2e8",  # Light orange
+        "Direct": "#e8f0ff"       # Light blue
+    }
+    
+    for comparison_name, metrics in metrics_data.items():
+        # Create frame for each comparison
+        tab_frame = ttk.Frame(notebook)
+        
+        # Create better tab names that clearly show both algorithms
+        if "AES-CBC Validation" in comparison_name:
+            tab_name = "✓ AES Validation"
+        elif "ChaCha20 Validation" in comparison_name:
+            tab_name = "✓ ChaCha20 Validation"
+        elif "AES-CBC Encryption" in comparison_name:
+            tab_name = "🔒 AES Encryption"
+        elif "ChaCha20 Encryption" in comparison_name:
+            tab_name = "🔒 ChaCha20 Encryption"
+        elif "Direct Comparison" in comparison_name:
+            tab_name = "⚖️ AES vs ChaCha20"
+        else:
+            tab_name = comparison_name.split('(')[0].strip()
+        
+        notebook.add(tab_frame, text=tab_name)
+        
+        # Create treeview for metrics table
+        tree_frame = ttk.Frame(tab_frame, padding="10")
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Title for this comparison
+        title_label = ttk.Label(tree_frame, text=comparison_name, 
+                               font=("Arial", 12, "bold"))
+        title_label.pack(pady=(0, 10))
+        
+        # Create treeview with columns
+        columns = ("Metrik", "Nilai", "Interpretasi")
+        tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=8)
+        
+        # Configure column headings
+        tree.heading("Metrik", text="Metrik Evaluasi")
+        tree.heading("Nilai", text="Nilai")
+        tree.heading("Interpretasi", text="Interpretasi")
+        
+        # Configure column widths
+        tree.column("Metrik", width=200, anchor=tk.W)
+        tree.column("Nilai", width=150, anchor=tk.CENTER)
+        tree.column("Interpretasi", width=300, anchor=tk.W)
+        
+        # Add metrics data to tree
+        for metric_name, value in metrics.items():
+            if isinstance(value, float):
+                if value == float('inf'):
+                    value_str = "∞ (Perfect)"
+                    interpretation = "Gambar identik sempurna"
+                else:
+                    value_str = f"{value:.6f}"
+                    interpretation = get_metric_interpretation(metric_name, value, comparison_name)
+            else:
+                value_str = str(value)
+                interpretation = get_metric_interpretation(metric_name, value, comparison_name)
+            
+            tree.insert("", tk.END, values=(metric_name, value_str, interpretation))
+        
+        # Add scrollbar to treeview
+        tree_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=tree_scrollbar.set)
+        
+        tree.pack(side="left", fill="both", expand=True)
+        tree_scrollbar.pack(side="right", fill="y")
+    
+    # Summary frame with key insights
+    summary_frame = ttk.LabelFrame(content_frame, text="Ringkasan dan Interpretasi", padding="15")
+    summary_frame.pack(fill=tk.X, pady=(15, 0))
+    
+    # Create summary text
+    summary_text = tk.Text(summary_frame, height=8, wrap=tk.WORD, font=("Arial", 9))
+    summary_scrollbar = ttk.Scrollbar(summary_frame, orient="vertical", command=summary_text.yview)
+    summary_text.configure(yscrollcommand=summary_scrollbar.set)
+    
+    # Generate summary content
+    summary_content = generate_metrics_summary(metrics_data)
+    summary_text.insert(tk.END, summary_content)
+    summary_text.config(state=tk.DISABLED)  # Make read-only
+    
+    summary_text.pack(side="left", fill="both", expand=True)
+    summary_scrollbar.pack(side="right", fill="y")
+    
+    # Buttons frame
+    button_frame = ttk.Frame(content_frame)
+    button_frame.pack(fill=tk.X, pady=(15, 0))
+    
+    # Export button
+    def export_to_file():
+        filename = save_metrics_to_file(metrics_data, image_path, aes_key_text, chacha_key_text)
+        if filename:
+            messagebox.showinfo("Export Berhasil", f"Metrik berhasil disimpan ke:\n{filename}")
+    
+    ttk.Button(button_frame, text="Export ke File TXT", command=export_to_file).pack(side=tk.LEFT, padx=(0, 10))
+    ttk.Button(button_frame, text="Tutup", command=root.destroy).pack(side=tk.LEFT)
+    
+    # Bind mouse wheel to canvas
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    def bind_to_mousewheel(event):
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    
+    def unbind_from_mousewheel(event):
+        canvas.unbind_all("<MouseWheel>")
+    
+    canvas.bind('<Enter>', bind_to_mousewheel)
+    canvas.bind('<Leave>', unbind_from_mousewheel)
+    
+    # Update scroll region
+    root.update_idletasks()
+    canvas.configure(scrollregion=canvas.bbox("all"))
+    
+    root.mainloop()
+
+def get_metric_interpretation(metric_name, value, comparison_type):
+    """Memberikan interpretasi untuk setiap metrik berdasarkan konteks."""
+    interpretations = {
+        "MSE": {
+            "Validation": "Harus 0 (identik sempurna)" if value == 0 else f"Error: {value:.2f}",
+            "Encryption": "Tinggi = enkripsi bagus" if value > 1000 else "Rendah = enkripsi lemah",
+            "Direct": "Tinggi = algoritma berbeda" if value > 1000 else "Rendah = hasil mirip"
+        },
+        "PSNR": {
+            "Validation": "Tak terhingga (sempurna)" if value == float('inf') else f"Error: {value:.2f} dB",
+            "Encryption": "Rendah = enkripsi bagus" if value < 10 else "Tinggi = enkripsi lemah",
+            "Direct": "Rendah = algoritma berbeda" if value < 10 else "Tinggi = hasil mirip"
+        },
+        "SSIM": {
+            "Validation": "Harus 1.0 (identik)" if abs(value - 1.0) < 0.001 else f"Error: {value:.3f}",
+            "Encryption": "Rendah = enkripsi bagus" if value < 0.1 else "Tinggi = enkripsi lemah",
+            "Direct": "Rendah = algoritma berbeda" if value < 0.1 else "Tinggi = hasil mirip"
+        },
+        "Correlation Coefficient (CC)": {
+            "Validation": "Harus 1.0 (identik)" if abs(value - 1.0) < 0.001 else f"Error: {value:.3f}",
+            "Encryption": "Mendekati 0 = enkripsi bagus" if abs(value) < 0.1 else "Jauh dari 0 = enkripsi lemah",
+            "Direct": "Mendekati 0 = algoritma berbeda" if abs(value) < 0.1 else "Tinggi = hasil mirip"
+        },
+        "NPCR (%)": {
+            "Validation": "Harus 0% (identik)" if value < 0.1 else f"Error: {value:.2f}%",
+            "Encryption": "Tinggi = enkripsi bagus" if value > 90 else "Rendah = enkripsi lemah",
+            "Direct": "Tinggi = algoritma berbeda" if value > 50 else "Rendah = hasil mirip"
+        },
+        "UACI (%)": {
+            "Validation": "Harus 0% (identik)" if value < 0.1 else f"Error: {value:.2f}%",
+            "Encryption": "~33.46% = optimal" if 30 <= value <= 37 else "Jauh dari optimal",
+            "Direct": "Tinggi = algoritma berbeda" if value > 20 else "Rendah = hasil mirip"
+        }
+    }
+    
+    # Determine comparison type category
+    if "Validation" in comparison_type:
+        category = "Validation"
+    elif "Encryption" in comparison_type:
+        category = "Encryption"
+    else:
+        category = "Direct"
+    
+    return interpretations.get(metric_name, {}).get(category, f"Nilai: {value}")
+
+def generate_metrics_summary(metrics_data):
+    """Menghasilkan ringkasan analisis dari semua metrik."""
+    summary = "RINGKASAN ANALISIS ENKRIPSI:\n\n"
+    
+    # Check validation results
+    aes_valid = False
+    chacha_valid = False
+    
+    for comparison_name, metrics in metrics_data.items():
+        if "AES-CBC Validation" in comparison_name:
+            mse = metrics.get("MSE", 1)
+            aes_valid = mse == 0
+        elif "ChaCha20 Validation" in comparison_name:
+            mse = metrics.get("MSE", 1)
+            chacha_valid = mse == 0
+    
+    summary += "1. VALIDASI DEKRIPSI:\n"
+    summary += f"   • AES-CBC: {'✓ VALID' if aes_valid else '✗ ERROR'}\n"
+    summary += f"   • ChaCha20: {'✓ VALID' if chacha_valid else '✗ ERROR'}\n\n"
+    
+    # Analyze encryption strength
+    summary += "2. KEKUATAN ENKRIPSI:\n"
+    
+    for comparison_name, metrics in metrics_data.items():
+        if "Encryption Analysis" in comparison_name:
+            algorithm = "AES-CBC" if "AES-CBC" in comparison_name else "ChaCha20"
+            npcr = metrics.get("NPCR (%)", 0)
+            uaci = metrics.get("UACI (%)", 0)
+            cc = abs(metrics.get("Correlation Coefficient (CC)", 1))
+            
+            strength = "KUAT" if npcr > 90 and cc < 0.1 else "LEMAH"
+            summary += f"   • {algorithm}: {strength} (NPCR: {npcr:.1f}%, CC: {cc:.3f})\n"
+    
+    summary += "\n3. PERBANDINGAN ALGORITMA:\n"
+    for comparison_name, metrics in metrics_data.items():
+        if "Direct Comparison" in comparison_name:
+            npcr = metrics.get("NPCR (%)", 0)
+            uaci = metrics.get("UACI (%)", 0)
+            summary += f"   • Perbedaan hasil: {npcr:.1f}% pixel berbeda\n"
+            summary += f"   • Intensitas perubahan: {uaci:.2f}%\n"
+    
+    summary += "\n4. KESIMPULAN:\n"
+    summary += "   • Semakin tinggi NPCR dan mendekati 0 CC = enkripsi semakin kuat\n"
+    summary += "   • UACI optimal sekitar 33.46% untuk enkripsi yang baik\n"
+    summary += "   • Dekripsi harus menghasilkan gambar identik dengan original\n"
+    summary += "   • Perbedaan hasil antar algoritma menunjukkan keunikan masing-masing\n"
+    
+    return summary
+
 def save_metrics_to_file(metrics_data, image_path, aes_key_text=None, chacha_key_text=None):
     """Menyimpan hasil metrik evaluasi ke file teks."""
     # Buat nama file hasil berdasarkan nama gambar input
@@ -580,6 +853,10 @@ def encrypt_decrypt_compare(image_path, aes_key, chacha_key, aes_key_text=None, 
     print("\nMenampilkan perbandingan gambar dalam layout 3x2...")
     display_images(original_rgb_array, original_gray_array, aes_encrypted_array, aes_decrypted_array,
                   chacha_encrypted_array, chacha_decrypted_array, image_path)
+    
+    # Tampilkan hasil metrik dalam GUI
+    print("\nMenampilkan hasil metrik evaluasi dalam GUI...")
+    display_metrics_gui(all_metrics, image_path, aes_key_text, chacha_key_text)
 
 
 if __name__ == '__main__':
@@ -620,6 +897,7 @@ if __name__ == '__main__':
                     print("✓ 6 gambar hasil (RGB original, grayscale original, 2 encrypted, 2 decrypted)")
                     print("✓ File metrik perbandingan dalam format .txt")
                     print("✓ Tampilan visual perbandingan dalam layout 3x2")
+                    print("✓ Tampilan GUI interaktif untuk hasil metrik evaluasi")
                     print(f"✓ Kunci yang digunakan telah disimpan dalam metrik file")
                     
                 except Exception as e:
